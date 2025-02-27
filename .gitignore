@@ -4,3 +4,5 @@ __pycache__
 /.ssh/
 /.idea/
 *.txt
+!requirements.txt
+!known_hosts.txt
