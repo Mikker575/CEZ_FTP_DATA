@@ -37,6 +37,7 @@ def huawei_datalogger_csv_parser(data: io.StringIO, date: pd.Timestamp) -> pd.Da
             inverter_data = [row]  # start new list for inv
         elif not any(["#" in element for element in row]):
             inverter_data.append(row)
+    all_inverters.append(inverter_data)  # append last inv data because there wont be additional header
 
     dfs = []
     for item in all_inverters:
@@ -47,7 +48,7 @@ def huawei_datalogger_csv_parser(data: io.StringIO, date: pd.Timestamp) -> pd.Da
             df.columns = new_header
             df = df[[TIMESTAMP_COL, E_DAY_COL]].rename(columns={TIMESTAMP_COL: startDate, E_DAY_COL: quantity})
             dfs.append(df)
-
+    print(len(dfs))
     if dfs:
         df = pd.concat(dfs, ignore_index=True)
         df[startDate] = pd.to_datetime(df[startDate], yearfirst=True).dt.tz_localize(TIMEZONE, ambiguous="infer")
