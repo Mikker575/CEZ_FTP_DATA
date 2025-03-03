@@ -46,9 +46,13 @@ def huawei_datalogger_csv_parser(data: io.StringIO, date: pd.Timestamp) -> pd.Da
             new_header = df.iloc[0]
             df = df[1:]
             df.columns = new_header
-            df = df[[TIMESTAMP_COL, E_DAY_COL]].rename(columns={TIMESTAMP_COL: startDate, E_DAY_COL: quantity})
+            try:
+                df = df[[TIMESTAMP_COL, E_DAY_COL]].rename(columns={TIMESTAMP_COL: startDate, E_DAY_COL: quantity})
+            except KeyError:
+                log.warning(f"Invalid csv data - missing columns {TIMESTAMP_COL}, {E_DAY_COL} - using replacement data")
+                df = pd.DataFrame(columns=[startDate, quantity])
             dfs.append(df)
-    print(len(dfs))
+
     if dfs:
         df = pd.concat(dfs, ignore_index=True)
         df[startDate] = pd.to_datetime(df[startDate], yearfirst=True).dt.tz_localize(TIMEZONE, ambiguous="infer")
