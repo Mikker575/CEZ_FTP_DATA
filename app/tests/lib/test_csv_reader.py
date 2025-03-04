@@ -1,12 +1,13 @@
-import pytest
-import pandas as pd
+import io
+import os
 
+import pandas as pd
+import pytest
+
+from lib import INTERVAL, TIMEZONE, TEST_DATA
 from lib.csv_reader import (last_interval_date, huawei_datalogger_csv_parser,
                             startDate, quantity, status, replacement_data, handle_missing_intervals)
-from lib import INTERVAL, TIMEZONE, TEST_DATA
 from lib.json_writer import DataValidity
-import os
-import io
 
 
 @pytest.fixture

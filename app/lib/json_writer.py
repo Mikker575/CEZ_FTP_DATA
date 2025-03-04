@@ -4,21 +4,16 @@ from enum import Enum
 from typing import List
 
 import pandas as pd
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 from lib import INTERVAL
 
 log = logging.getLogger(__name__)
 
-# df column names - must match Field of pydantic model below
+# df column names - must match Field of pydantic TimeSeries model
 startDate = "startDate"
 quantity = "quantity"
 status = "status"
-
-unitType = "unitType"
-intervalMinutes = "intervalMinutes"
-production = "production"
-
 
 # requested json model: https://megujulo-cez.hu/files/json-data-structure.json
 
@@ -39,10 +34,17 @@ class TimeSeries(BaseModel):
     quantity: float = Field(ge=0)
     status: DataValidity
 
+    @field_validator("startDate", mode="before")
+    @classmethod
+    def parse_timestamp(cls, value):
+        if isinstance(value, str):
+            return pd.Timestamp(value)
+        return value
+
 
 class JsonDataCEZ(BaseModel):
     unitType: str = "kWh"
-    intervalMinutes: int = INTERVAL
+    intervalInMinutes: int = INTERVAL
     production: list[TimeSeries]
 
 
