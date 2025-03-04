@@ -1,13 +1,13 @@
-from unittest.mock import MagicMock, patch
 import io
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from lib.sftp_conn import DataSourcesConfig, SftpConn, read_last_interval, sftp_write_jsons, sftp_read_and_process_csv
-from lib.csv_reader import replacement_data, startDate, quantity, status
 from lib import LOGGER_DT_FMT
+from lib.csv_reader import replacement_data, startDate, quantity, status
+from lib.sftp_conn import DataSourcesConfig, SftpConn, read_last_interval, sftp_write_jsons
 
 
 def test_data_sources_config():
@@ -161,10 +161,8 @@ def test_sftp_write_jsons(mock_log_info, mock_production_to_json_bytes, mock_sft
 
     sftp_write_jsons(sample_date, data_dict)
 
-    mock_sftp_instance.chdir.assert_called_once_with("CEZ_TEST_DIR")
     mock_production_to_json_bytes.assert_called_once_with(sample_df)
     mock_sftp_instance.open.assert_called_once_with("./pod_123-2024-03-04.json", "wb")
     mock_log_info.assert_called_once_with("Successfully created file ./pod_123-2024-03-04.json")
     mock_sftp_instance.open.return_value.__enter__.return_value.write.assert_called_once_with(
         b'{"production": [10, 20], "timestamp": ["2024-03-04T00:00:00", "2024-03-04T00:15:00"]}')
-    

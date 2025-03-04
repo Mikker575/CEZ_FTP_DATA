@@ -92,6 +92,8 @@ def read_last_interval(date: pd.Timestamp) -> dict:
                         df = sftp_read_and_process_csv(sftp=sftp, filename=latest_filenames[0],
                                                        date=date)
                         project_data[pod_id] = df
+                    elif not latest_filenames:
+                        project_data[pod_id] = replacement_data(date)
                     else:
                         log.warning(f"Multiple matching files for {pod_id} - using file with latest time of modification")
                         files_attr = [s for s in files_attrs if s.filename in latest_filenames]
@@ -121,7 +123,6 @@ def sftp_write_jsons(date: pd.Timestamp, data_dict: dict):
     and write all files to target ftp
     """
     with SftpConn("target_ftp") as sftp:
-        sftp.chdir("CEZ_TEST_DIR")
 
         for key, value in data_dict.items():
             json_io = production_to_json_bytes(value)
@@ -132,4 +133,3 @@ def sftp_write_jsons(date: pd.Timestamp, data_dict: dict):
             with sftp.open(remote_path, "wb") as remote_file:
                 remote_file.write(json_io.getvalue())
                 log.info(f"Successfully created file {remote_path}")
-
