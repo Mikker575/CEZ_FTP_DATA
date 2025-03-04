@@ -116,6 +116,10 @@ def sftp_read_and_process_csv(sftp: pysftp.Connection, filename: str, date: pd.T
 
 
 def sftp_write_jsons(date: pd.Timestamp, data_dict: dict):
+    """
+    Go through data dict (key is POD number and value is DataFrame with interval data - convert it to CEZ json format
+    and write all files to target ftp
+    """
     with SftpConn("target_ftp") as sftp:
         sftp.chdir("CEZ_TEST_DIR")
 
@@ -127,3 +131,5 @@ def sftp_write_jsons(date: pd.Timestamp, data_dict: dict):
 
             with sftp.open(remote_path, "wb") as remote_file:
                 remote_file.write(json_io.getvalue())
+                log.info(f"Successfully created file {remote_path}")
+
