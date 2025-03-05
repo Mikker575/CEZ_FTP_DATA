@@ -1,0 +1,15 @@
+version: '3'
+services:
+  cez_ftp_data:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cez_ftp_data
+    container_name: cez_ftp_data
+    volumes:
+      - cez_ftp_data:/data
+    restart: always
+    command: python -u main.py
+
+volumes:
+  cez_ftp_data:

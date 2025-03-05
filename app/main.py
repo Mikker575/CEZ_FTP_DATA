@@ -1,5 +1,6 @@
 import datetime
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import sys
 import time
@@ -13,9 +14,8 @@ from lib.sftp_conn import read_last_interval, sftp_write_jsons
 
 log = logging.getLogger(__name__)
 
-logging_time = datetime.datetime.now().strftime('%Y-%m-%d--%H-%M-%S')
 logging_filename = os.path.splitext(os.path.basename(__file__))[0]
-logging_file = os.path.join(LOGS_DIR, f'{logging_time}_log_{logging_filename}.txt')
+logging_file = os.path.join(LOGS_DIR, f'log_{logging_filename}.log')
 
 
 def main():
@@ -31,9 +31,9 @@ if __name__ == '__main__':
 
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s %(levelname)s --- %(name)s --- %(message)s',
+        format="[%(asctime)s] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] --- %(message)s",
         datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[logging.StreamHandler(), logging.FileHandler(logging_file, mode='w')]
+        handlers=[logging.StreamHandler(), RotatingFileHandler(logging_file, mode='a', maxBytes=100000, backupCount=10)]
     )
     log = logging.getLogger(__name__)
     sys.excepthook = log_unhandled_exceptions
@@ -46,5 +46,5 @@ if __name__ == '__main__':
         while True:
             time.sleep(0.2)
     except (KeyboardInterrupt, SystemExit):
-        logging.info("Exiting")
+        log.info("Exiting")
         scheduler.shutdown()
