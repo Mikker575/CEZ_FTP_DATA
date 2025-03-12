@@ -2,13 +2,13 @@ import io
 import json
 import logging
 import warnings
-from typing import Literal
+import ftplib
 
 import pandas as pd
 import pysftp
 from pydantic import BaseModel, SecretStr
 
-from lib import SSH_KEY_PATH, DATA_SOURCES_CONFIG, LOGGER_DT_FMT
+from lib import SSH_KEY_PATH, SFTP_CONFIG, LOGGER_DT_FMT, FTP_CONFIG
 from lib.csv_reader import huawei_datalogger_csv_parser, replacement_data, handle_missing_intervals
 from lib.json_writer import production_to_json_bytes
 
@@ -22,16 +22,52 @@ class FTPConfig(BaseModel):
     password: SecretStr
 
 
-class DataSourcesConfig(BaseModel):
-    source_ftp: FTPConfig
-    target_ftp: FTPConfig
+class FtpConn(ftplib.FTP):
+    """
+    FTP connection class
+    """
+    def __init__(self, ftp_name: str):
+        with open(FTP_CONFIG) as f:
+            data = json.load(f)
+
+        config = data[ftp_name]
+        config = FTPConfig(**config)
+
+        self.host = config.host
+        self.port = config.port
+        self.username = config.username
+        self.__password = config.password.get_secret_value()
+
+        super().__init__()
+
+    def start_connection(self):
+        """
+        Start connection and login with configured credentials
+        """
+        try:
+            super().connect(host=self.host, port=self.port)
+            super().login(user=self.username, passwd=self.__password)
+        except Exception as e:
+            log.warning(f"Cannot start connection to FTP - {e}")
+
+    def write_file(self, filename: str, binary_data: io.BytesIO):
+        """
+        Start connection, login, write file and quit connection
+        """
+        self.start_connection()
+        try:
+            self.storbinary(f"STOR {filename}", binary_data)
+            log.info(f"Successfully created file {filename}")
+        except Exception as e:
+            log.warning(f"Cannot write file {filename} to FTP - {e}")
+        self.quit()
 
 
 class SftpConn(pysftp.Connection):
     """
     SFTP connection class
     """
-    def __init__(self, sftp_source: Literal["source_ftp", "target_ftp"]):
+    def __init__(self):
         """
         Connect to specific sftp host
         """
@@ -45,19 +81,15 @@ class SftpConn(pysftp.Connection):
         warnings.resetwarnings()
 
         # load config from json
-        with open(DATA_SOURCES_CONFIG) as f:
+        with open(SFTP_CONFIG) as f:
             data = json.load(f)
 
-        if sftp_source not in data.keys():
-            raise ValueError(f"Invalid sftp_source: {sftp_source}")
+        config = FTPConfig(**data)
 
-        config = DataSourcesConfig(**data)
-        source = getattr(config, sftp_source)
-
-        self.host = source.host
-        self.port = source.port
-        self.username = source.username
-        self.__password = source.password.get_secret_value()
+        self.host = config.host
+        self.port = config.port
+        self.username = config.username
+        self.__password = config.password.get_secret_value()
 
         super().__init__(host=self.host, port=self.port, username=self.username,
                          password=self.__password, cnopts=self._cnopts)
@@ -74,7 +106,7 @@ def read_last_interval(date: pd.Timestamp) -> dict:
     :return: dictionary with folder name (=POD of pvp) as key and DataFrame as value for all directories
     """
     project_data = {}
-    with SftpConn("source_ftp") as sftp:
+    with SftpConn() as sftp:
         dirs = [s for s in sftp.listdir() if sftp.isdir(s)]
         if not dirs:
             raise ValueError(f"No directories found on sftp {sftp.host} - cannot process and send any data")
@@ -94,6 +126,8 @@ def read_last_interval(date: pd.Timestamp) -> dict:
                         project_data[pod_id] = df
                     elif not latest_filenames:
                         project_data[pod_id] = replacement_data(date)
+                        log.warning(
+                            f"No data for {pod_id} - using replacement data")
                     else:
                         log.warning(f"Multiple matching files for {pod_id} - using file with latest time of modification")
                         files_attr = [s for s in files_attrs if s.filename in latest_filenames]
@@ -122,14 +156,10 @@ def sftp_write_jsons(date: pd.Timestamp, data_dict: dict):
     Go through data dict (key is POD number and value is DataFrame with interval data - convert it to CEZ json format
     and write all files to target ftp
     """
-    with SftpConn("target_ftp") as sftp:
+    for key, value in data_dict.items():
+        json_io = production_to_json_bytes(value)
+        filename = f"{key}-{date.date()}.json"
+        json_io.seek(0)
 
-        for key, value in data_dict.items():
-            json_io = production_to_json_bytes(value)
-            filename = f"{key}-{date.date()}.json"
-            remote_path = f"./{filename}"
-            json_io.seek(0)
-
-            with sftp.open(remote_path, "wb") as remote_file:
-                remote_file.write(json_io.getvalue())
-                log.info(f"Successfully created file {remote_path}")
+        ftp = FtpConn(key)
+        ftp.write_file(filename=filename, binary_data=json_io)

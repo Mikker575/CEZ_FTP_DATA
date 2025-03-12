@@ -1,5 +1,6 @@
 import io
 from unittest.mock import MagicMock, patch
+import unittest
 
 import pandas as pd
 import pytest
@@ -7,62 +8,35 @@ from pydantic import ValidationError
 
 from lib import LOGGER_DT_FMT
 from lib.csv_reader import replacement_data, startDate, quantity, status
-from lib.sftp_conn import DataSourcesConfig, SftpConn, read_last_interval, sftp_write_jsons
+from lib.sftp_conn import SftpConn, read_last_interval, sftp_write_jsons, FTPConfig, FtpConn
 
 
 def test_data_sources_config():
     config_data = {
-        "source_ftp": {
             "host": "example.com",
             "port": 22,
             "username": "user",
             "password": "pass123"
-        },
-        "target_ftp": {
-            "host": "example2.com",
-            "port": 2222,
-            "username": "user2",
-            "password": "pass456"
-        }
     }
 
-    config = DataSourcesConfig(**config_data)
+    config = FTPConfig(**config_data)
 
-    assert config.source_ftp.host == "example.com"
-    assert config.source_ftp.port == 22
-    assert config.source_ftp.username == "user"
-    assert config.source_ftp.password.get_secret_value() == "pass123"
-    assert str(config.source_ftp.password) == "**********"
+    assert config.host == "example.com"
+    assert config.port == 22
+    assert config.username == "user"
+    assert config.password.get_secret_value() == "pass123"
+    assert str(config.password) == "**********"
 
 
 def test_invalid_data_sources_config():
     invalid_data = {
-        "source_ftp": {
             "host": "example.com",
             "port": 22,
             "username": "user"
-        }
-    }
-
-    invalid_source_name = {
-        "ftp_source": {
-            "host": "example.com",
-            "port": 22,
-            "username": "user",
-            "password": "pass123"
-        }
     }
 
     with pytest.raises(ValidationError):
-        DataSourcesConfig(**invalid_data)
-
-    with pytest.raises(ValidationError):
-        DataSourcesConfig(**invalid_source_name)
-
-
-def test_invalid_sftp_source():
-    with pytest.raises(ValueError, match="wrong_ftp_source"):
-        SftpConn("wrong_ftp_source")
+        FTPConfig(**invalid_data)
 
 
 @pytest.fixture
@@ -138,31 +112,46 @@ def test_read_last_interval_multiple_files(mock_sftp):
     mock_csv_reader.assert_called_once_with(sftp=mock_sftp, filename=f"{date.strftime(LOGGER_DT_FMT)}.csv", date=date)
 
 
-sample_date = pd.Timestamp("2024-03-04 00:00")
-sample_df = pd.DataFrame({
-    'timestamp': [sample_date, sample_date + pd.Timedelta(minutes=15)],
-    'production': [10, 20]
-})
-data_dict = {"pod_123": sample_df}
+@pytest.fixture
+def mock_open():
+    mock_data = '{"ftp_name": {"host": "localhost", "port": 21, "username": "ftp_name", "password": "password"}}'
+    with patch('builtins.open', unittest.mock.mock_open(read_data=mock_data)):
+        yield
 
 
-def mock_production_to_json_bytes(df):
-    fake_json = '{"production": [10, 20], "timestamp": ["2024-03-04T00:00:00", "2024-03-04T00:15:00"]}'
-    return io.BytesIO(fake_json.encode("utf-8"))
+@patch('lib.sftp_conn.FtpConn')
+def test_init(mock_ftp_class, mock_open):
+    mock_ftp_class.return_value = MagicMock()
+
+    ftp_conn = FtpConn('ftp_name')
+
+    assert ftp_conn.host == "localhost"
+    assert ftp_conn.port == 21
+    assert ftp_conn.username == "ftp_name"
+    assert ftp_conn._FtpConn__password == "password"
 
 
-@patch("lib.sftp_conn.SftpConn")
-@patch("lib.sftp_conn.production_to_json_bytes", side_effect=mock_production_to_json_bytes)
-@patch("lib.sftp_conn.log.info")
-def test_sftp_write_jsons(mock_log_info, mock_production_to_json_bytes, mock_sftp_conn):
-    mock_sftp_instance = MagicMock()
-    mock_sftp_conn.return_value.__enter__.return_value = mock_sftp_instance
-    mock_sftp_instance.open.return_value.__enter__.return_value = MagicMock()
+@patch('ftplib.FTP.connect')
+@patch('ftplib.FTP.login')
+def test_start_connection(mock_login, mock_connect, mock_open):
+    ftp_conn = FtpConn('ftp_name')
 
-    sftp_write_jsons(sample_date, data_dict)
+    ftp_conn.start_connection()
 
-    mock_production_to_json_bytes.assert_called_once_with(sample_df)
-    mock_sftp_instance.open.assert_called_once_with("./pod_123-2024-03-04.json", "wb")
-    mock_log_info.assert_called_once_with("Successfully created file ./pod_123-2024-03-04.json")
-    mock_sftp_instance.open.return_value.__enter__.return_value.write.assert_called_once_with(
-        b'{"production": [10, 20], "timestamp": ["2024-03-04T00:00:00", "2024-03-04T00:15:00"]}')
+    mock_connect.assert_called_once_with(host=ftp_conn.host, port=ftp_conn.port)
+    mock_login.assert_called_once_with(user=ftp_conn.username, passwd=ftp_conn._FtpConn__password)
+
+
+@patch('ftplib.FTP.storbinary')
+@patch('ftplib.FTP.quit')
+def test_write_file(mock_quit, mock_storbinary, mock_open):
+    ftp_conn = FtpConn('ftp_name')
+
+    filename = "test.txt"
+    binary_data = io.BytesIO(b"Some binary content")
+
+    ftp_conn.write_file(filename, binary_data)
+
+    mock_storbinary.assert_called_once_with(f"STOR {filename}", binary_data)
+
+    mock_quit.assert_called_once()
