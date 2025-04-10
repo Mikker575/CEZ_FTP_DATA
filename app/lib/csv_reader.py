@@ -2,9 +2,10 @@ import csv
 import io
 import logging
 
+import numpy as np
 import pandas as pd
 
-from lib import TIMEZONE, INTERVAL
+from lib import TIMEZONE, INTERVAL, HUB_CSV_DT_FMT
 from lib.json_writer import DataValidity, startDate, quantity, status
 
 log = logging.getLogger(__name__)
@@ -98,4 +99,44 @@ def handle_missing_intervals(datalogger_df: pd.DataFrame, date: pd.Timestamp) ->
     df = pd.merge(replacement, datalogger_df, left_index=True, right_index=True, how="left")
     df[status] = [DataValidity.f.value if pd.isna(x) else DataValidity.w.value for x in df[quantity]]
     df[quantity] = df[quantity].fillna(0)
+    return df
+
+
+def pecom_hub_csv_parser(data: io.StringIO) -> pd.DataFrame:
+    """
+    Process 5min csv file from hub
+    """
+    try:
+        df = pd.read_csv(data, sep=";")
+    except pd.errors.EmptyDataError:
+        log.warning("CSV from HUB is empty")
+        return pd.DataFrame(columns=[startDate, quantity])
+    else:
+        df = df.rename(columns={df.columns[0]: startDate})
+        if len(df.index) != 5:
+            return pd.DataFrame(columns=[startDate, quantity])
+        else:
+            df[startDate] = pd.to_datetime(df[startDate], format=HUB_CSV_DT_FMT).dt.tz_localize("UTC")
+            df = df.set_index(startDate)
+            df[quantity] = df.sum(axis=1)
+            df = df.reset_index(drop=False)[[startDate, quantity]]
+            return df
+
+
+def aggregate_hub_csvs(dfs: list, date: pd.Timestamp) -> pd.DataFrame:
+    """
+    Aggregate all csv files (converted to dataframe) for given date to CEZ formated dataframe
+    """
+    if dfs:
+        df = pd.concat(dfs, ignore_index=True)
+        df[startDate] = df[startDate] + pd.Timedelta(minutes=-1)
+        df = df.set_index(startDate).resample("5min").max()
+        df[quantity] = df[quantity].ffill().bfill()
+        df[quantity] = df[quantity].diff().fillna(0)
+        df[quantity] = df[quantity].clip(lower=0)
+        df[quantity] = df[quantity].round(3)
+        df.columns.name = None
+        df = handle_missing_intervals(df, date=date)
+    else:
+        df = replacement_data(date=date)
     return df

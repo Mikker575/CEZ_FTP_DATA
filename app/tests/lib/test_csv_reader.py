@@ -6,7 +6,8 @@ import pytest
 
 from lib import INTERVAL, TIMEZONE, TEST_DATA
 from lib.csv_reader import (last_interval_date, huawei_datalogger_csv_parser,
-                            startDate, quantity, status, replacement_data, handle_missing_intervals)
+                            startDate, quantity, status, replacement_data, handle_missing_intervals,
+                            pecom_hub_csv_parser, aggregate_hub_csvs)
 from lib.json_writer import DataValidity
 
 
@@ -150,4 +151,70 @@ def test_handle_missing_intervals():
     assert df.index.equals(expected_index)
     assert df[quantity].isna().sum() == 0
     assert df[quantity].sum() == sum([10] * len(datalogger_index))
+    assert df[status].isin([e.value for e in DataValidity]).all()
+
+
+@pytest.mark.parametrize("csv_file", ['pecom_hub_csv_parser_valid.csv'])
+def test_pecom_hub_csv_parser_valid(csv_file):
+    with open(os.path.join(TEST_DATA, csv_file), 'rb') as f:
+        file_buffer = io.BytesIO(f.read())
+        file_buffer.seek(0)
+        csv_data = io.StringIO(file_buffer.read().decode('utf-8'))
+
+    result_df = pecom_hub_csv_parser(csv_data)
+
+    assert isinstance(result_df, pd.DataFrame)
+    assert not result_df.empty
+    assert all(col in result_df.columns for col in [startDate, quantity])
+    assert result_df[quantity].sum() == 19876312.17
+    assert str(result_df[startDate].dt.tz) == "UTC"
+
+
+@pytest.mark.parametrize("csv_file", ['pecom_hub_csv_parser_invalid.csv'])
+def test_pecom_hub_csv_parser_invalid(csv_file):
+    with open(os.path.join(TEST_DATA, csv_file), 'rb') as f:
+        file_buffer = io.BytesIO(f.read())
+        file_buffer.seek(0)
+        csv_data = io.StringIO(file_buffer.read().decode('utf-8'))
+
+    result_df = pecom_hub_csv_parser(csv_data)
+
+    assert isinstance(result_df, pd.DataFrame)
+    assert result_df.empty
+    assert all(col in result_df.columns for col in [startDate, quantity])
+
+
+@pytest.mark.parametrize("csv_file", ['pecom_hub_csv_parser_empty.csv'])
+def test_pecom_hub_csv_parser_empty(csv_file):
+    with open(os.path.join(TEST_DATA, csv_file), 'rb') as f:
+        file_buffer = io.BytesIO(f.read())
+        file_buffer.seek(0)
+        csv_data = io.StringIO(file_buffer.read().decode('utf-8'))
+
+    result_df = pecom_hub_csv_parser(csv_data)
+
+    assert isinstance(result_df, pd.DataFrame)
+    assert result_df.empty
+    assert all(col in result_df.columns for col in [startDate, quantity])
+
+
+def test_aggregate_hub_csvs():
+    date = pd.Timestamp("2024-03-03 00:10", tz=TIMEZONE)
+    dfs = [pd.DataFrame(columns=[startDate, quantity]),
+           pd.DataFrame({startDate: [pd.Timestamp("2024-03-03 00:06", tz="UTC"),
+                                     pd.Timestamp("2024-03-03 00:07", tz="UTC"),
+                                     pd.Timestamp("2024-03-03 00:08", tz="UTC"),
+                                     pd.Timestamp("2024-03-03 00:09", tz="UTC"),
+                                     pd.Timestamp("2024-03-03 00:10", tz="UTC")],
+                         quantity: [0, 0, 0, 0, 0]
+           })]
+
+    df = aggregate_hub_csvs(dfs=dfs, date=date)
+
+    replacement_df = replacement_data(date).drop(columns=["quantity"])
+    expected_index = replacement_df.index[replacement_df.index <= date.tz_convert("UTC")]
+
+    assert df.index.equals(expected_index)
+    assert df[quantity].isna().sum() == 0
+    assert df[quantity].sum() == 0
     assert df[status].isin([e.value for e in DataValidity]).all()

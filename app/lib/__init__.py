@@ -11,3 +11,5 @@ SSH_KEY_PATH = os.path.join(DATA_PATH, ".ssh", "known_hosts.txt")
 TIMEZONE = "Europe/Budapest"
 INTERVAL = 5
 LOGGER_DT_FMT = "%Y%m%d"
+HUB_DT_FMT = "%Y%m%d %H%M%S"
+HUB_CSV_DT_FMT = "%Y-%m-%dT%H:%M:%S"

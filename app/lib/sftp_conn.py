@@ -8,8 +8,8 @@ import pandas as pd
 import pysftp
 from pydantic import BaseModel, SecretStr
 
-from lib import SSH_KEY_PATH, SFTP_CONFIG, LOGGER_DT_FMT, FTP_CONFIG
-from lib.csv_reader import huawei_datalogger_csv_parser, replacement_data, handle_missing_intervals
+from lib import SSH_KEY_PATH, SFTP_CONFIG, LOGGER_DT_FMT, FTP_CONFIG, HUB_DT_FMT, INTERVAL
+from lib.csv_reader import huawei_datalogger_csv_parser, replacement_data, handle_missing_intervals, pecom_hub_csv_parser, aggregate_hub_csvs
 from lib.json_writer import production_to_json_bytes
 
 log = logging.getLogger(__name__)
@@ -110,7 +110,6 @@ def read_last_interval(date: pd.Timestamp) -> dict:
         dirs = [s for s in sftp.listdir() if sftp.isdir(s)]
         if not dirs:
             raise ValueError(f"No directories found on sftp {sftp.host} - cannot process and send any data")
-        
         for pod_id in dirs:
             with sftp.cd(pod_id):
                 files_attrs = sftp.listdir_attr()
@@ -118,23 +117,37 @@ def read_last_interval(date: pd.Timestamp) -> dict:
                     log.warning(f"No matching files for pod_id {pod_id} - using replacement data")
                     project_data[pod_id] = replacement_data(date)
                 else:
-                    latest_filenames = [s.filename for s in files_attrs if date.strftime(LOGGER_DT_FMT) in s.filename]
-                    if len(latest_filenames) == 1:
-                        log.info(f"File for pod_id {pod_id} is correct")
-                        df = sftp_read_and_process_csv(sftp=sftp, filename=latest_filenames[0],
-                                                       date=date)
-                        project_data[pod_id] = df
-                    elif not latest_filenames:
-                        project_data[pod_id] = replacement_data(date)
-                        log.warning(
-                            f"No data for {pod_id} - using replacement data")
+                    # Korosladany 4 receives data from HUB, not Huawei datalogger - different processing required
+                    if pod_id == "HU000310B41-S10000000000001863504":
+                        utc_end = date.tz_convert("UTC").tz_localize(None) + pd.Timedelta(minutes=INTERVAL)
+                        utc_start = date.floor("1D").tz_convert("UTC").tz_localize(None)
+                        latest_filenames = [s.filename for s in files_attrs if utc_start <= pd.to_datetime(s.filename.split("-", maxsplit=1)[0], format=HUB_DT_FMT) <= utc_end]
+                        if latest_filenames:
+                            df = sftp_read_and_process_hub_csv(sftp=sftp, files=latest_filenames, date=date)
+                            log.info(f"Files for pod_id {pod_id} are correct")
+                            project_data[pod_id] = df
+                        else:
+                            df = replacement_data(date)
+                            project_data[pod_id] = df
+                            log.warning(f"No data for {pod_id} - using replacement data")
                     else:
-                        log.warning(f"Multiple matching files for {pod_id} - using file with latest time of modification")
-                        files_attr = [s for s in files_attrs if s.filename in latest_filenames]
-                        latest_file = max(files_attr, key=lambda s: s.st_mtime)
-                        df = sftp_read_and_process_csv(sftp=sftp, filename=latest_file.filename,
-                                                       date=date)
-                        project_data[pod_id] = df
+                        latest_filenames = [s.filename for s in files_attrs if date.strftime(LOGGER_DT_FMT) in s.filename]
+                        if len(latest_filenames) == 1:
+                            log.info(f"File for pod_id {pod_id} is correct")
+                            df = sftp_read_and_process_csv(sftp=sftp, filename=latest_filenames[0],
+                                                           date=date)
+                            project_data[pod_id] = df
+                        elif not latest_filenames:
+                            project_data[pod_id] = replacement_data(date)
+                            log.warning(
+                                f"No data for {pod_id} - using replacement data")
+                        else:
+                            log.warning(f"Multiple matching files for {pod_id} - using file with latest time of modification")
+                            files_attr = [s for s in files_attrs if s.filename in latest_filenames]
+                            latest_file = max(files_attr, key=lambda s: s.st_mtime)
+                            df = sftp_read_and_process_csv(sftp=sftp, filename=latest_file.filename,
+                                                           date=date)
+                            project_data[pod_id] = df
     return project_data
 
 
@@ -163,3 +176,20 @@ def sftp_write_jsons(date: pd.Timestamp, data_dict: dict):
 
         ftp = FtpConn(key)
         ftp.write_file(filename=filename, binary_data=json_io)
+
+
+def sftp_read_and_process_hub_csv(sftp: pysftp.Connection, files: list, date: pd.Timestamp) -> pd.DataFrame:
+    """
+    Some projects receive csv data from HUB, not datalogger - this code handles different source
+    """
+    data = []
+    for file in files:
+        with sftp.open(file, 'r') as file_handle:
+            file_buffer = io.BytesIO(file_handle.read())
+            file_buffer.seek(0)
+            decoded_file = io.StringIO(file_buffer.read().decode('utf-8'))
+            df = pecom_hub_csv_parser(decoded_file)
+            data.append(df)
+    all_df = aggregate_hub_csvs(dfs=data, date=date)
+
+    return all_df
