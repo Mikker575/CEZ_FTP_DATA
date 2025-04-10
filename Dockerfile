@@ -6,7 +6,7 @@ WORKDIR /app/
 
 # copying and installing packages
 COPY app/requirements.txt .
-RUN python -m pip install --upgrade pip
+RUN python -m pip install --upgrade pip==25.0.1
 RUN python -m venv venv
 RUN pip install --no-cache-dir -r requirements.txt
 
