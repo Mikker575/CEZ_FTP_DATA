@@ -8,7 +8,7 @@ import pandas as pd
 import pysftp
 from pydantic import BaseModel, SecretStr
 
-from lib import SSH_KEY_PATH, SFTP_CONFIG, LOGGER_DT_FMT, FTP_CONFIG, HUB_DT_FMT, INTERVAL
+from lib import SSH_KEY_PATH, SFTP_CONFIG, LOGGER_DT_FMT, FTP_CONFIG, HUB_DT_FMT, INTERVAL, LOGGER_DT_FMT_2
 from lib.csv_reader import huawei_datalogger_csv_parser, replacement_data, handle_missing_intervals, pecom_hub_csv_parser, aggregate_hub_csvs
 from lib.json_writer import production_to_json_bytes
 
@@ -117,10 +117,11 @@ def read_last_interval(date: pd.Timestamp) -> dict:
                     log.warning(f"No matching files for pod_id {pod_id} - using replacement data")
                     project_data[pod_id] = replacement_data(date)
                 else:
-                    # Korosladany 4 receives data from HUB, not Huawei datalogger - different processing required
-                    if pod_id == "HU000310B41-S10000000000001863504":
+                    # in case project receives data from HUB and not logger, add POD ids here
+                    if pod_id == "project":
                         utc_end = date.tz_convert("UTC").tz_localize(None) + pd.Timedelta(minutes=INTERVAL)
                         utc_start = date.floor("1D").tz_convert("UTC").tz_localize(None)
+                        files_attrs = [s for s in files_attrs if not "min" in s.filename]
                         latest_filenames = [s.filename for s in files_attrs if utc_start <= pd.to_datetime(s.filename.split("-", maxsplit=1)[0], format=HUB_DT_FMT) <= utc_end]
                         if latest_filenames:
                             df = sftp_read_and_process_hub_csv(sftp=sftp, files=latest_filenames, date=date)
@@ -131,7 +132,8 @@ def read_last_interval(date: pd.Timestamp) -> dict:
                             project_data[pod_id] = df
                             log.warning(f"No data for {pod_id} - using replacement data")
                     else:
-                        latest_filenames = [s.filename for s in files_attrs if date.strftime(LOGGER_DT_FMT) in s.filename]
+                        files_attrs = [s for s in files_attrs if "min" in s.filename]
+                        latest_filenames = [s.filename for s in files_attrs if date.strftime(LOGGER_DT_FMT) in s.filename or date.strftime(LOGGER_DT_FMT_2) in s.filename]
                         if len(latest_filenames) == 1:
                             log.info(f"File for pod_id {pod_id} is correct")
                             df = sftp_read_and_process_csv(sftp=sftp, filename=latest_filenames[0],

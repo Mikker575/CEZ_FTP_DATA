@@ -5,7 +5,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from lib import TIMEZONE, INTERVAL, HUB_CSV_DT_FMT
+from lib import TIMEZONE, INTERVAL, HUB_CSV_DT_FMT, LOGGER_CSV_DT_FORMAT, LOGGER_CSV_DT_FORMAT_2
 from lib.json_writer import DataValidity, startDate, quantity, status
 
 log = logging.getLogger(__name__)
@@ -56,7 +56,12 @@ def huawei_datalogger_csv_parser(data: io.StringIO, date: pd.Timestamp) -> pd.Da
 
     if dfs:
         df = pd.concat(dfs, ignore_index=True)
-        df[startDate] = pd.to_datetime(df[startDate], yearfirst=True).dt.tz_localize(TIMEZONE, ambiguous="infer")
+        try:
+            df[startDate] = pd.to_datetime(
+                df[startDate], format=LOGGER_CSV_DT_FORMAT).dt.tz_localize(TIMEZONE, ambiguous="infer")
+        except ValueError:
+            df[startDate] = pd.to_datetime(
+                df[startDate], format=LOGGER_CSV_DT_FORMAT_2).dt.tz_localize(TIMEZONE, ambiguous="infer")
         df[quantity] = df[quantity].astype(float)
         df = df.groupby(by=startDate, as_index=False).agg({quantity: "sum"}).set_index(startDate)
         df = df.diff().fillna(0).clip(lower=0)
