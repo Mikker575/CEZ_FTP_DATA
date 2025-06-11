@@ -2,7 +2,6 @@ import csv
 import io
 import logging
 
-import numpy as np
 import pandas as pd
 
 from lib import TIMEZONE, INTERVAL, HUB_CSV_DT_FMT, LOGGER_CSV_DT_FORMAT, LOGGER_CSV_DT_FORMAT_2
@@ -92,6 +91,7 @@ def replacement_data(date: pd.Timestamp) -> pd.DataFrame:
     df = df[df.index <= date]
     df.index = df.index.tz_convert("UTC")
     df[status] = DataValidity.f.value
+    df = df[[status, quantity]]
     return df
 
 

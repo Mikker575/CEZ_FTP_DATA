@@ -1,9 +1,8 @@
-import datetime
 import logging
-from logging.handlers import RotatingFileHandler
 import os
 import sys
 import time
+from logging.handlers import RotatingFileHandler
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
