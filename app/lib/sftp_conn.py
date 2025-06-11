@@ -110,7 +110,10 @@ def read_last_interval(date: pd.Timestamp) -> dict:
         dirs = [s for s in sftp.listdir() if sftp.isdir(s)]
         if not dirs:
             raise ValueError(f"No directories found on sftp {sftp.host} - cannot process and send any data")
-        for pod_id in dirs:
+        with open(FTP_CONFIG) as f:
+            ftp_data = json.load(f)
+        configured_dirs = [s for s in dirs if s in ftp_data.keys()]
+        for pod_id in configured_dirs:
             with sftp.cd(pod_id):
                 files_attrs = sftp.listdir_attr()
                 if not files_attrs:

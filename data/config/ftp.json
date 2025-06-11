@@ -24,5 +24,7 @@
     "HU000210B11-S00000000000016216576": {"host": "ftp.sundroid.hu", "port": 21,"username": "username", "password": "password"},
     "HU000210B11-S00000000000016216573": {"host": "ftp.sundroid.hu", "port": 21,"username": "username", "password": "password"},
     "HU000210B11-S00000000000016216572": {"host": "ftp.sundroid.hu", "port": 21,"username": "username", "password": "password"},
-    "HU000210B11-S00000000000016216562": {"host": "ftp.sundroid.hu", "port": 21,"username": "username", "password": "password"}
+    "HU000210B11-S00000000000016216562": {"host": "ftp.sundroid.hu", "port": 21,"username": "username", "password": "password"},
+    "HU000120B11-U-NAPEROM-BARCS-518-4": {"host": "ftp.sundroid.hu", "port": 21,"username": "username", "password": "password"},
+    "HU000120C11-U-NAPE-MOHACS-0130-56": {"host": "ftp.sundroid.hu", "port": 21,"username": "username", "password": "password"}
 }
